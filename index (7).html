@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulfrich Illusion</title>
+<style>
+  body { margin: 20px; font-family: sans-serif; background: #fff; color: #222; }
+  #wrap { max-width: 680px; }
+  canvas { width: 100%; display: block; }
+  #ctrl { display:flex; align-items:center; gap:10px; margin:8px 0 0; font-size:13px; flex-wrap:wrap; }
+  button { font-size:12px; padding:5px 14px; border:1px solid #aaa; border-radius:6px; background:transparent; cursor:pointer; }
+  button:hover { background:#f0f0f0; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="ctrl">
+    <button id="pbtn" onclick="togglePause()">⏸ Pause</button>
+    <span>Period</span>
+    <input type="range" id="pp" min="1.5" max="8" step="0.5" value="5" style="width:70px" oninput="onParam()">
+    <span id="ppl" style="min-width:32px">5s</span>
+    <span>Filter delay Δt</span>
+    <input type="range" id="pd" min="0" max="420" step="20" value="180" style="flex:1;min-width:80px" oninput="onParam()">
+    <span id="pdl" style="min-width:46px">180ms</span>
+  </div>
+</div>
+<script>
+(function(){
+  const W=680, H=508;
+  const cv = document.getElementById('cv');
+
+  // Fix blurriness: scale canvas by devicePixelRatio
+  const dpr = window.devicePixelRatio || 1;
+  cv.width  = W * dpr;
+  cv.height = H * dpr;
+  cv.style.height = H + 'px';
+  const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
+
+  const CX=340, SWIN=148;
+  const PY=185, PX=0.2, PY2=0.68;
+  const EY=400, LEX=200, REX=480, ER=31;
+
+  let running=true, lastT=null, tSec=0, trail=[], trailMax=120;
+
+  function onParam(){
+    document.getElementById('ppl').textContent = document.getElementById('pp').value + 's';
+    document.getElementById('pdl').textContent = document.getElementById('pd').value + 'ms';
+    trail = [];
+  }
+
+  function togglePause(){
+    running = !running;
+    document.getElementById('pbtn').textContent = running ? '⏸ Pause' : '▶ Play';
+    if(running){ lastT=null; requestAnimationFrame(loop); }
+  }
+
+  function pr(x,z){ return { sx: CX+x-z*PX, sy: PY-z*PY2 }; }
+
+  function rr(x,y,w,h,r){
+    c.beginPath();
+    c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.arcTo(x+w,y,x+w,y+r,r);
+    c.lineTo(x+w,y+h-r); c.arcTo(x+w,y+h,x+w-r,y+h,r);
+    c.lineTo(x+r,y+h); c.arcTo(x,y+h,x,y+h-r,r);
+    c.lineTo(x,y+r); c.arcTo(x,y,x+r,y,r);
+    c.closePath();
+  }
+
+  function drawEye(ex, filter){
+    c.beginPath(); c.arc(ex,EY,ER,0,2*Math.PI);
+    c.fillStyle='#fff'; c.fill();
+    c.strokeStyle='#222'; c.lineWidth=1.8; c.stroke();
+    c.beginPath(); c.arc(ex,EY,ER*0.52,0,2*Math.PI);
+    c.fillStyle='#6a6860'; c.fill();
+    c.beginPath(); c.arc(ex,EY,ER*0.25,0,2*Math.PI);
+    c.fillStyle='#111'; c.fill();
+    if(filter){
+      c.save();
+      c.translate(ex, EY-ER*0.52); c.rotate(-0.2);
+      c.fillStyle='rgba(50,50,45,0.82)';
+      rr(-27,-7,54,14,3); c.fill();
+      c.strokeStyle='rgba(0,0,0,0.4)';
+      c.lineWidth=0.8; rr(-27,-7,54,14,3); c.stroke();
+      c.restore();
+    }
+  }
+
+  function draw(t){
+    c.clearRect(0,0,W,H);
+
+    const period  = parseFloat(document.getElementById('pp').value);
+    const delayS  = parseFloat(document.getElementById('pd').value)/1000;
+    const omega   = 2*Math.PI/period;
+    const xA      = SWIN*Math.sin(omega*t);
+    const xD      = SWIN*Math.sin(omega*(t-delayS));
+    const D       = Math.min(72, SWIN*omega*delayS);
+    const zP      = D*Math.cos(omega*t);
+    const pPerc   = pr(xA, zP);
+
+    // Title
+    c.fillStyle='rgba(50,48,44,0.7)';
+    c.font='12px sans-serif'; c.textAlign='center';
+    c.fillText('Pulfrich pendulum illusion — visual latency hypothesis', CX, 16);
+
+    // Dashed ellipse — darker stroke
+    c.beginPath();
+    for(let i=0;i<=240;i++){
+      const th=(i/240)*2*Math.PI;
+      const p=pr(SWIN*Math.cos(th), D*Math.sin(th));
+      i===0 ? c.moveTo(p.sx,p.sy) : c.lineTo(p.sx,p.sy);
+    }
+    c.closePath();
+    c.strokeStyle='rgba(0,0,0,0.6)'; c.lineWidth=1.8;
+    c.setLineDash([6,4]); c.stroke(); c.setLineDash([]);
+
+    // Clockwise arrows on ellipse
+    [0.08,0.33,0.58,0.83].forEach(f=>{
+      const th=f*2*Math.PI, dt=0.055;
+      const p1=pr(SWIN*Math.cos(th),   D*Math.sin(th));
+      const p2=pr(SWIN*Math.cos(th+dt),D*Math.sin(th+dt));
+      const ang=Math.atan2(p2.sy-p1.sy, p2.sx-p1.sx);
+      c.save(); c.translate(p1.sx,p1.sy); c.rotate(ang);
+      c.strokeStyle='rgba(0,0,0,0.65)'; c.lineWidth=1.3;
+      c.beginPath(); c.moveTo(-6,-4); c.lineTo(0,0); c.lineTo(-6,4); c.stroke();
+      c.restore();
+    });
+
+    // Blue trail of perceived position
+    trail.push({x:pPerc.sx, y:pPerc.sy});
+    if(trail.length>trailMax) trail.shift();
+    if(trail.length>2){
+      c.beginPath(); c.moveTo(trail[0].x,trail[0].y);
+      for(let i=1;i<trail.length;i++) c.lineTo(trail[i].x,trail[i].y);
+      c.strokeStyle='rgba(55,138,221,0.75)'; c.lineWidth=2.8; c.stroke();
+    }
+
+    // Actual path line
+    const pL=pr(-SWIN-28,0), pR=pr(SWIN+28,0);
+    c.beginPath(); c.moveTo(pL.sx,pL.sy); c.lineTo(pR.sx,pR.sy);
+    c.strokeStyle='rgba(0,0,0,0.45)'; c.lineWidth=1.2;
+    c.setLineDash([5,3]); c.stroke(); c.setLineDash([]);
+    c.fillStyle='rgba(40,38,34,0.75)';
+    c.font='11px sans-serif'; c.textAlign='left';
+    c.fillText('Actual path', pR.sx+5, pR.sy+4);
+
+    const pA=pr(xA,0), pD=pr(xD,0);
+
+    // Sight lines — primary (same-side), much darker
+    c.beginPath(); c.moveTo(pD.sx,pD.sy+12); c.lineTo(LEX,EY-ER);
+    c.strokeStyle='rgba(80,78,68,0.85)'; c.lineWidth=1.8;
+    c.setLineDash([7,3]); c.stroke(); c.setLineDash([]);
+
+    c.beginPath(); c.moveTo(pA.sx,pA.sy+12); c.lineTo(REX,EY-ER);
+    c.strokeStyle='rgba(20,80,150,0.85)'; c.lineWidth=1.8;
+    c.setLineDash([7,3]); c.stroke(); c.setLineDash([]);
+
+    // Cross lines — thinner but still visible
+    c.beginPath(); c.moveTo(pD.sx,pD.sy+12); c.lineTo(REX,EY-ER);
+    c.strokeStyle='rgba(80,78,68,0.45)'; c.lineWidth=1.1;
+    c.setLineDash([4,4]); c.stroke(); c.setLineDash([]);
+
+    c.beginPath(); c.moveTo(pA.sx,pA.sy+12); c.lineTo(LEX,EY-ER);
+    c.strokeStyle='rgba(20,80,150,0.45)'; c.lineWidth=1.1;
+    c.setLineDash([4,4]); c.stroke(); c.setLineDash([]);
+
+    // Delayed ball (filled dark)
+    c.beginPath(); c.arc(pD.sx,pD.sy,12,0,2*Math.PI);
+    c.fillStyle='#383634'; c.fill();
+    c.strokeStyle='#111'; c.lineWidth=1.5; c.stroke();
+
+    // Actual ball (open + slash)
+    c.beginPath(); c.arc(pA.sx,pA.sy,12,0,2*Math.PI);
+    c.fillStyle='#fefefe'; c.fill();
+    c.strokeStyle='#111'; c.lineWidth=1.5; c.stroke();
+    c.beginPath(); c.moveTo(pA.sx-8,pA.sy-8); c.lineTo(pA.sx+8,pA.sy+8);
+    c.strokeStyle='#111'; c.lineWidth=1.5; c.stroke();
+
+    // Perceived position (blue dot)
+    c.beginPath(); c.arc(pPerc.sx,pPerc.sy,8,0,2*Math.PI);
+    c.fillStyle='#378ADD'; c.fill();
+    c.strokeStyle='#0f4a90'; c.lineWidth=2; c.stroke();
+
+    // Eyes
+    drawEye(LEX, true);
+    drawEye(REX, false);
+
+    // Filter label
+    c.fillStyle='rgba(40,38,34,0.75)';
+    c.font='11px sans-serif'; c.textAlign='center';
+    c.fillText('Filter', LEX-22, EY-ER*0.45);
+
+    // Eye labels
+    c.fillStyle='#222'; c.font='12px sans-serif'; c.textAlign='center';
+    c.fillText('left eye (filtered)', LEX, EY+ER+16);
+    c.fillText('right eye',           REX, EY+ER+16);
+
+    // Depth indicator
+    if(D>2){
+      const dir      = Math.cos(omega*t)>0 ? 'Further away ↑' : 'Closer ↓';
+      const depthPct = Math.abs(Math.round(Math.cos(omega*t)*100));
+      c.fillStyle='rgba(15,70,150,0.9)';
+      c.font='12px sans-serif'; c.textAlign='center';
+      c.fillText(`Perceived depth: ${dir} (${depthPct}%)`, CX, H-66);
+    } else {
+      c.fillStyle='rgba(80,78,74,0.7)';
+      c.font='11px sans-serif'; c.textAlign='center';
+      c.fillText('No filter delay → no apparent depth', CX, H-66);
+    }
+
+    // Legend
+    const ly=H-50, lx=24;
+    c.beginPath(); c.arc(lx+7,ly,7,0,2*Math.PI);
+    c.fillStyle='#fefefe'; c.fill();
+    c.strokeStyle='#111'; c.lineWidth=1; c.stroke();
+    c.beginPath(); c.moveTo(lx+2,ly-5); c.lineTo(lx+12,ly+5); c.stroke();
+    c.fillStyle='rgba(30,28,24,0.85)';
+    c.font='11px sans-serif'; c.textAlign='left';
+    c.fillText('Unfiltered right eye position', lx+18, ly+4);
+
+    const lx2=lx+220;
+    c.beginPath(); c.arc(lx2+7,ly,7,0,2*Math.PI);
+    c.fillStyle='#383634'; c.fill();
+    c.strokeStyle='#111'; c.lineWidth=1; c.stroke();
+    c.fillText('Filtered left eye position (delayed)', lx2+18, ly+4);
+
+    const lx3=lx2+235;
+    c.beginPath(); c.arc(lx3+6,ly,5,0,2*Math.PI);
+    c.fillStyle='#378ADD'; c.fill();
+    c.fillText('Perceived position', lx3+14, ly+4);
+  }
+
+  function loop(ts){
+    if(!running) return;
+    if(lastT!==null) tSec += (ts-lastT)/1000;
+    lastT = ts;
+    draw(tSec);
+    requestAnimationFrame(loop);
+  }
+
+  draw(0);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
