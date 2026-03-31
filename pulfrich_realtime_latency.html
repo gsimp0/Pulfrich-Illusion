@@ -1,0 +1,225 @@
+
+<canvas id="cv" width="680" height="508" style="width:100%;display:block"></canvas>
+<div style="display:flex;align-items:center;gap:10px;margin:8px 0 0;font-size:13px;color:var(--color-text-secondary);flex-wrap:wrap">
+  <button id="pbtn" onclick="togglePause()" style="font-size:12px;padding:4px 12px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:transparent;color:var(--color-text-primary);cursor:pointer">⏸ Pause</button>
+  <span>Period</span>
+  <input type="range" id="pp" min="1.5" max="6" step="0.5" value="3" style="width:70px" oninput="onParam()">
+  <span id="ppl" style="min-width:28px">3s</span>
+  <span>Filter delay Δt</span>
+  <input type="range" id="pd" min="0" max="420" step="20" value="180" style="flex:1;min-width:80px" oninput="onParam()">
+  <span id="pdl" style="min-width:46px">180ms</span>
+</div>
+<script>
+(function(){
+const cv=document.getElementById('cv');
+const c=cv.getContext('2d');
+const W=680,H=508;
+const CX=340,SWIN=148;
+const PY=188;
+const PX=0.2,PY2=0.68;
+const EY=400,LEX=200,REX=480,ER=31;
+
+let running=true,lastT=null,tSec=0,trail=[],trailMax=120;
+
+function onParam(){
+  document.getElementById('ppl').textContent=document.getElementById('pp').value+'s';
+  document.getElementById('pdl').textContent=document.getElementById('pd').value+'ms';
+  trail=[];
+}
+
+function togglePause(){
+  running=!running;
+  document.getElementById('pbtn').textContent=running?'⏸ Pause':'▶ Play';
+  if(running){lastT=null;requestAnimationFrame(loop);}
+}
+
+const dk=()=>window.matchMedia('(prefers-color-scheme:dark)').matches;
+function pr(x,z){return{sx:CX+x-z*PX,sy:PY-z*PY2};}
+
+function rr(x,y,w,h,r){
+  c.beginPath();c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.arcTo(x+w,y,x+w,y+r,r);
+  c.lineTo(x+w,y+h-r);c.arcTo(x+w,y+h,x+w-r,y+h,r);
+  c.lineTo(x+r,y+h);c.arcTo(x,y+h,x,y+h-r,r);
+  c.lineTo(x,y+r);c.arcTo(x,y,x+r,y,r);c.closePath();
+}
+
+function drawEye(ex,filter){
+  const d=dk();
+  c.beginPath();c.arc(ex,EY,ER,0,2*Math.PI);
+  c.fillStyle=d?'rgba(28,28,26,0.95)':'rgba(254,254,252,0.95)';c.fill();
+  c.strokeStyle=d?'#b0ae a4':'#2c2c2a';c.lineWidth=1.5;c.stroke();
+  c.beginPath();c.arc(ex,EY,ER*0.52,0,2*Math.PI);
+  c.fillStyle=d?'#3a3830':'#7a7870';c.fill();
+  c.beginPath();c.arc(ex,EY,ER*0.25,0,2*Math.PI);
+  c.fillStyle=d?'#0a0a08':'#111110';c.fill();
+  if(filter){
+    c.save();c.translate(ex,EY-ER*0.52);c.rotate(-0.2);
+    c.fillStyle=d?'rgba(90,90,85,0.75)':'rgba(60,60,55,0.65)';
+    rr(-26,-7,52,13,3);c.fill();
+    c.strokeStyle=d?'rgba(130,130,120,0.4)':'rgba(30,30,25,0.35)';
+    c.lineWidth=0.5;rr(-26,-7,52,13,3);c.stroke();
+    c.restore();
+  }
+}
+
+function draw(t){
+  const d=dk();
+  const fg=d?'#c8c6bc':'#2c2c2a';
+  const faint=d?'rgba(200,198,188,':'rgba(0,0,0,';
+
+  c.clearRect(0,0,W,H);
+
+  const period=parseFloat(document.getElementById('pp').value);
+  const delayS=parseFloat(document.getElementById('pd').value)/1000;
+  const omega=2*Math.PI/period;
+
+  const xA=SWIN*Math.sin(omega*t);
+  const xD=SWIN*Math.sin(omega*(t-delayS));
+  const D=Math.min(72,SWIN*omega*delayS);
+  const zP=D*Math.cos(omega*t);
+  const pPerc=pr(xA,zP);
+
+  // Title
+  c.fillStyle=d?'rgba(200,198,188,0.7)':'rgba(60,58,54,0.7)';
+  c.font='12px var(--font-sans,sans-serif)';
+  c.textAlign='center';
+  c.fillText('Pulfrich pendulum illusion — visual latency hypothesis',CX,16);
+
+  // Ellipse (dashed perspective guide)
+  c.beginPath();
+  for(let i=0;i<=240;i++){
+    const th=(i/240)*2*Math.PI;
+    const p=pr(SWIN*Math.cos(th),D*Math.sin(th));
+    i===0?c.moveTo(p.sx,p.sy):c.lineTo(p.sx,p.sy);
+  }
+  c.closePath();
+  c.strokeStyle=faint+'0.28)';c.lineWidth=1.5;c.setLineDash([6,4]);c.stroke();c.setLineDash([]);
+
+  // Direction arrows on ellipse
+  [0.08,0.33,0.58,0.83].forEach(f=>{
+    const th=f*2*Math.PI,dt=0.055;
+    const p1=pr(SWIN*Math.cos(th),D*Math.sin(th));
+    const p2=pr(SWIN*Math.cos(th+dt),D*Math.sin(th+dt));
+    const ang=Math.atan2(p2.sy-p1.sy,p2.sx-p1.sx);
+    c.save();c.translate(p1.sx,p1.sy);c.rotate(ang);
+    c.strokeStyle=faint+'0.38)';c.lineWidth=1;
+    c.beginPath();c.moveTo(-6,-4);c.lineTo(0,0);c.lineTo(-6,4);c.stroke();
+    c.restore();
+  });
+
+  // Trail (perceived position arc)
+  trail.push({x:pPerc.sx,y:pPerc.sy});
+  if(trail.length>trailMax)trail.shift();
+  if(trail.length>2){
+    c.beginPath();c.moveTo(trail[0].x,trail[0].y);
+    for(let i=1;i<trail.length;i++)c.lineTo(trail[i].x,trail[i].y);
+    c.strokeStyle='rgba(55,138,221,0.5)';c.lineWidth=2.5;c.stroke();
+  }
+
+  // Actual path line
+  const pL=pr(-SWIN-28,0),pR=pr(SWIN+28,0);
+  c.beginPath();c.moveTo(pL.sx,pL.sy);c.lineTo(pR.sx,pR.sy);
+  c.strokeStyle=faint+'0.35)';c.lineWidth=1;c.setLineDash([5,3]);c.stroke();c.setLineDash([]);
+  c.fillStyle=d?'rgba(190,188,178,0.55)':'rgba(70,68,64,0.55)';
+  c.font='11px var(--font-sans,sans-serif)';c.textAlign='left';
+  c.fillText('Actual path',pR.sx+5,pR.sy+4);
+
+  const pA=pr(xA,0),pD=pr(xD,0);
+
+  // --- 4 sight lines forming X pattern ---
+  // Primary (same-side): delayed→left eye, actual→right eye
+  const alpha1=d?0.6:0.5, alpha2=d?0.25:0.18;
+
+  // delayed → left eye (gray)
+  c.beginPath();c.moveTo(pD.sx,pD.sy+12);c.lineTo(LEX,EY-ER);
+  c.strokeStyle=`rgba(130,128,118,${alpha1})`;c.lineWidth=1.4;c.setLineDash([7,3]);c.stroke();c.setLineDash([]);
+  // actual → right eye (blue)
+  c.beginPath();c.moveTo(pA.sx,pA.sy+12);c.lineTo(REX,EY-ER);
+  c.strokeStyle=`rgba(55,138,221,${alpha1})`;c.lineWidth=1.4;c.setLineDash([7,3]);c.stroke();c.setLineDash([]);
+
+  // Cross lines (opposite-side): delayed→right eye, actual→left eye — thinner
+  c.beginPath();c.moveTo(pD.sx,pD.sy+12);c.lineTo(REX,EY-ER);
+  c.strokeStyle=`rgba(130,128,118,${alpha2})`;c.lineWidth=1;c.setLineDash([4,4]);c.stroke();c.setLineDash([]);
+  c.beginPath();c.moveTo(pA.sx,pA.sy+12);c.lineTo(LEX,EY-ER);
+  c.strokeStyle=`rgba(55,138,221,${alpha2})`;c.lineWidth=1;c.setLineDash([4,4]);c.stroke();c.setLineDash([]);
+
+  // --- Delayed ball (filled dark = left eye signal) ---
+  c.beginPath();c.arc(pD.sx,pD.sy,12,0,2*Math.PI);
+  c.fillStyle=d?'#484642':'#383634';c.fill();
+  c.strokeStyle=fg;c.lineWidth=1.5;c.stroke();
+
+  // --- Actual ball (open circle + slash = right eye signal) ---
+  c.beginPath();c.arc(pA.sx,pA.sy,12,0,2*Math.PI);
+  c.fillStyle=d?'rgba(32,32,30,0.93)':'rgba(253,253,251,0.93)';c.fill();
+  c.strokeStyle=fg;c.lineWidth=1.5;c.stroke();
+  c.beginPath();c.moveTo(pA.sx-8,pA.sy-8);c.lineTo(pA.sx+8,pA.sy+8);
+  c.strokeStyle=fg;c.lineWidth=1.5;c.stroke();
+
+  // --- Perceived position (blue dot on ellipse) ---
+  c.beginPath();c.arc(pPerc.sx,pPerc.sy,8,0,2*Math.PI);
+  c.fillStyle='#378ADD';c.fill();
+  c.strokeStyle=d?'#6CBEFF':'#185FA5';c.lineWidth=1.8;c.stroke();
+
+  // --- Eyes ---
+  drawEye(LEX,true);drawEye(REX,false);
+
+  // Filter label
+  c.fillStyle=d?'rgba(180,178,168,0.65)':'rgba(70,68,64,0.65)';
+  c.font='11px var(--font-sans,sans-serif)';c.textAlign='center';
+  c.fillText('Filter',LEX-22,EY-ER*0.45);
+
+  // Eye labels
+  c.fillStyle=fg;c.font='12px var(--font-sans,sans-serif)';c.textAlign='center';
+  c.fillText('left eye (filtered)',LEX,EY+ER+14);
+  c.fillText('right eye',REX,EY+ER+14);
+
+  // Depth indicator text
+  if(D>2){
+    const dir=Math.cos(omega*t)>0?'Further away ↑':'Closer ↓';
+    const depthPct=Math.abs(Math.round(Math.cos(omega*t)*100));
+    c.fillStyle=d?'rgba(55,138,221,0.7)':'rgba(24,95,165,0.7)';
+    c.font='11px var(--font-sans,sans-serif)';c.textAlign='center';
+    c.fillText(`Perceived depth: ${dir} (${depthPct}%)`,CX,H-66);
+  } else {
+    c.fillStyle=d?'rgba(200,198,188,0.5)':'rgba(80,78,74,0.5)';
+    c.font='11px var(--font-sans,sans-serif)';c.textAlign='center';
+    c.fillText('No filter delay → no apparent depth',CX,H-66);
+  }
+
+  // Legend
+  const ly=H-50,lx=24;
+  // open/slash ball
+  c.beginPath();c.arc(lx+7,ly,7,0,2*Math.PI);
+  c.fillStyle=d?'rgba(32,32,30,0.9)':'rgba(253,253,251,0.9)';c.fill();
+  c.strokeStyle=fg;c.lineWidth=1;c.stroke();
+  c.beginPath();c.moveTo(lx+2,ly-5);c.lineTo(lx+12,ly+5);c.stroke();
+  c.fillStyle=d?'rgba(180,178,168,0.75)':'rgba(60,58,54,0.75)';
+  c.font='11px var(--font-sans,sans-serif)';c.textAlign='left';
+  c.fillText('Unfiltered right eye position',lx+18,ly+4);
+
+  // filled ball
+  const lx2=lx+220;
+  c.beginPath();c.arc(lx2+7,ly,7,0,2*Math.PI);
+  c.fillStyle=d?'#484642':'#383634';c.fill();
+  c.strokeStyle=fg;c.lineWidth=1;c.stroke();
+  c.fillText('Filtered left eye position (delayed)',lx2+18,ly+4);
+
+  // blue dot
+  const lx3=lx2+230;
+  c.beginPath();c.arc(lx3+6,ly,5,0,2*Math.PI);
+  c.fillStyle='#378ADD';c.fill();
+  c.fillText('Perceived position',lx3+15,ly+4);
+}
+
+function loop(ts){
+  if(!running)return;
+  if(lastT!==null)tSec+=(ts-lastT)/1000;
+  lastT=ts;
+  draw(tSec);
+  requestAnimationFrame(loop);
+}
+
+draw(0);
+requestAnimationFrame(loop);
+})();
+</script>
